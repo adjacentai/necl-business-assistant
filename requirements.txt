@@ -1,0 +1,18 @@
+# Telegram Bot
+aiogram==3.5.0
+
+# OpenAI API Client
+openai==1.25.1
+
+# Environment configuration
+python-dotenv==1.0.1
+
+# HTTP clients
+requests==2.32.3
+aiohttp==3.9.5
+
+# Rasa NLU
+# Note: Rasa has many dependencies. Installation on Apple Silicon (M1/M2/M3)
+# might require additional steps for TensorFlow.
+# See Rasa documentation for details.
+rasa==3.7.0
