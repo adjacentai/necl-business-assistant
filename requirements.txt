@@ -11,8 +11,4 @@ python-dotenv==1.0.1
 requests==2.32.3
 aiohttp==3.9.5
 
-# Rasa NLU
-# Note: Rasa has many dependencies. Installation on Apple Silicon (M1/M2/M3)
-# might require additional steps for TensorFlow.
-# See Rasa documentation for details.
-rasa==3.7.0
+

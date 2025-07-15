@@ -1,12 +1,14 @@
 from aiogram import types
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message
 
 from .routers import main_router
 from src.assistant.logger import log_user_message, log_assistant_response
-from src.assistant.rasa_client import get_rasa_intent
+from src.assistant.context_manager import get_history, add_message
 from src.assistant.openai_client import get_openai_response
-from src.assistant.context_manager import context_manager
 from src.assistant.prompts import build_prompt
+from src.bot.keyboards import create_main_menu_keyboard
 
 # A simple in-memory storage for user processing status.
 # Using a set for efficient add/remove operations.
@@ -31,10 +33,10 @@ async def handle_start(message: types.Message):
 
 
 @main_router.message()
-async def handle_text_message(message: types.Message):
+async def handle_text_message(message: Message, state: FSMContext):
     """
-    Handler for all incoming text messages.
-    Integrates Rasa and OpenAI to provide an intelligent response.
+    Handles incoming text messages from the user.
+    Integrates OpenAI to provide an intelligent response.
     """
     user_id = message.from_user.id
 
@@ -48,27 +50,24 @@ async def handle_text_message(message: types.Message):
         log_user_message(user_id, user_text)
         
         # Add user message to context immediately
-        context_manager.add_message(user_id, 'user', user_text)
+        add_message(user_id, 'user', user_text)
 
-        # 1. Get intent from Rasa
-        rasa_data = await get_rasa_intent(str(user_id), user_text)
+        # Get conversation history
+        history = get_history(user_id)
 
-        # 2. Get conversation history
-        history = context_manager.get_history(user_id)
+        # Build the prompt for the language model
+        prompt_messages = build_prompt(history, user_text)
 
-        # 3. Build the prompt for OpenAI
-        prompt_messages = build_prompt(history, user_text, rasa_data)
-
-        # 4. Get response from OpenAI
+        # Get response from OpenAI
         assistant_response = await get_openai_response(prompt_messages)
 
         if not assistant_response:
             assistant_response = "Извините, у меня возникла проблема. Попробуйте еще раз."
 
-        # 5. Send response and save to context
+        # Send response and save to context
         await message.answer(assistant_response)
         log_assistant_response(user_id, assistant_response)
-        context_manager.add_message(user_id, 'assistant', assistant_response)
+        add_message(user_id, 'assistant', assistant_response)
 
     except Exception as e:
         # Generic error handling

@@ -16,9 +16,6 @@ if not OPENAI_API_KEY:
 
 OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
 
-# --- Rasa API Configuration ---
-RASA_API_URL = os.getenv("RASA_API_URL", "http://localhost:5005/webhooks/rest/webhook")
-
 # --- Logging Configuration ---
 LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
 if not os.path.exists(LOGS_DIR):
