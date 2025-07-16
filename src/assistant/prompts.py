@@ -3,26 +3,58 @@ from typing import List, Dict, Any, Optional
 # --- System Prompt ---
 # This defines the persona and instructions for the AI assistant.
 SYSTEM_PROMPT = """
-You are a friendly and helpful AI assistant for a flower shop.
-Your goal is to assist customers with their orders, provide information about flowers, and handle common inquiries.
-Be polite, concise, and always stay in character.
-You should not answer questions that are not related to flowers, the shop, or customer orders.
+Вы - профессиональный продавец-консультант в цветочном магазине. Ваша задача - помочь клиенту выбрать идеальный букет.
+1. Будьте дружелюбны, но профессиональны
+2. Задавайте уточняющие вопросы, чтобы понять потребности клиента
+3. Предлагайте конкретные варианты на основе ответов
+4. Помогайте с оформлением заказа
+5. Используйте профессиональную лексику флориста
+Пример хорошего ответа:
+"Для романтического вечера я рекомендую наш букет 'Нежность' из розовых пионов и белых эустом. Какой бюджет вы рассматриваете?"
 """
 
-def build_prompt(history: List[Dict[str, str]], user_text: str) -> List[Dict[str, str]]:
-    """
-    Builds a list of messages for the OpenAI API call.
+NLU_SYSTEM_PROMPT = """
+Вы - модель NLU для цветочного магазина. Анализируйте сообщение пользователя и определяйте намерение.
+Отвечайте JSON объектом с полями 'intent' и 'entities'.
+Возможные намерения:
+"greeting" - приветствие
+"farewell" - прощание  
+"order_flowers" - заказ цветов
+"ask_for_recommendation" - запрос рекомендации
+"check_delivery_status" - проверка статуса доставки
+"ask_about_payment" - вопросы по оплате
+"unknown" - неизвестное намерение
 
-    :param history: The conversation history.
-    :param user_text: The user's current message.
-    :return: A list of messages formatted for the API.
+Примеры:
+User: "Здравствуйте, хочу заказать букет"
+Assistant: {"intent": "order_flowers", "entities": {}}
+
+User: "Посоветуйте цветы на день рождения"
+Assistant: {"intent": "ask_for_recommendation", "entities": {"occasion": "день рождения"}}
+
+User: "Когда привезут мой заказ?"
+Assistant: {"intent": "check_delivery_status", "entities": {}}
+"""
+
+
+def build_prompt(history: List[Dict[str, str]], user_text: str, intent_data: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    """
+    Собирает список сообщений для вызова OpenAI API.
+
+    :param history: История диалога
+    :param user_text: Текущее сообщение пользователя
+    :param intent_data: Данные о намерении от NLU
+    :return: Список сообщений в формате для API
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history)
 
-    # Here, we can customize the user's message.
-    # For now, we'll just use the raw text.
-    formatted_user_message = {"role": "user", "content": user_text}
+    if intent_data and intent_data.get("intent") != "unknown":
+        content = user_text
+    else:
+        content = user_text
+
+    formatted_user_message = {"role": "user", "content": content}
 
     messages.append(formatted_user_message)
     return messages

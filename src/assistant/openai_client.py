@@ -1,9 +1,11 @@
 import logging
-from typing import List, Dict, Optional
+import json
+from typing import List, Dict, Optional, Any
 
 from openai import AsyncOpenAI
 
 from src.config import OPENAI_API_KEY, OPENAI_MODEL_NAME
+from src.assistant.prompts import NLU_SYSTEM_PROMPT
 
 # Initialize the asynchronous OpenAI client
 if not OPENAI_API_KEY:
@@ -40,4 +42,42 @@ async def get_openai_response(messages: List[Dict[str, str]]) -> Optional[str]:
             return None
     except Exception as e:
         logging.error(f"An error occurred while communicating with OpenAI: {e}")
+        return None
+
+
+async def get_intent_from_openai(user_text: str) -> Optional[Dict[str, Any]]:
+    """
+    Identifies the user's intent by calling the OpenAI API with a specialized NLU prompt.
+
+    Args:
+        user_text: The raw text from the user's message.
+
+    Returns:
+        A dictionary containing the 'intent' and 'entities', or None if it fails.
+    """
+    messages = [
+        {"role": "system", "content": NLU_SYSTEM_PROMPT},
+        {"role": "user", "content": user_text}
+    ]
+
+    try:
+        response = await client.chat.completions.create(
+            model=OPENAI_MODEL_NAME,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.0
+        )
+
+        if response.choices and response.choices[0].message:
+            response_text = response.choices[0].message.content
+            intent_data = json.loads(response_text)
+            return intent_data
+        else:
+            logging.error("NLU response from OpenAI is empty or invalid.")
+            return None
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to decode JSON from NLU response: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"An error occurred during NLU processing: {e}")
         return None

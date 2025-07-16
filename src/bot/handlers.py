@@ -6,7 +6,7 @@ from aiogram.types import Message
 from .routers import main_router
 from src.assistant.logger import log_user_message, log_assistant_response
 from src.assistant.context_manager import get_history, add_message
-from src.assistant.openai_client import get_openai_response
+from src.assistant.openai_client import get_openai_response, get_intent_from_openai
 from src.assistant.prompts import build_prompt
 from src.bot.keyboards import create_main_menu_keyboard
 
@@ -52,13 +52,21 @@ async def handle_text_message(message: Message, state: FSMContext):
         # Add user message to context immediately
         add_message(user_id, 'user', user_text)
 
-        # Get conversation history
+        if not user_text:
+            return
+
+        # 1. Get user's intent
+        intent_data = await get_intent_from_openai(user_text)
+        # Optional: Log the detected intent
+        # logging.info(f"User {user_id} intent: {intent_data}")
+
+        # 2. Get conversation history
         history = get_history(user_id)
 
-        # Build the prompt for the language model
-        prompt_messages = build_prompt(history, user_text)
+        # 3. Build the prompt for the language model
+        prompt_messages = build_prompt(history, user_text, intent_data)
 
-        # Get response from OpenAI
+        # 4. Get response from OpenAI
         assistant_response = await get_openai_response(prompt_messages)
 
         if not assistant_response:
