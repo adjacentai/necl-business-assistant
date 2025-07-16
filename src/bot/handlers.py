@@ -1,89 +1,117 @@
-from aiogram import types
-from aiogram.filters import CommandStart
+import logging
+from aiogram import F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.filters import StateFilter
 
-from .routers import main_router
-from src.assistant.logger import log_user_message, log_assistant_response
-from src.assistant.context_manager import get_history, add_message
 from src.assistant.openai_client import get_openai_response, get_intent_from_openai
 from src.assistant.prompts import build_prompt
-from src.bot.keyboards import create_main_menu_keyboard
-
-# A simple in-memory storage for user processing status.
-# Using a set for efficient add/remove operations.
-processing_users = set()
+from src.bot.routers import main_router
+from src.bot.states import OrderFlowers
+from src.database.database import async_session_maker, get_or_create_user
 
 
-@main_router.message(CommandStart())
-async def handle_start(message: types.Message):
+@main_router.message(StateFilter(None))
+async def route_message(message: types.Message, state: FSMContext):
     """
-    Handler for the /start command.
-    Greets the user and logs the interaction.
+    This is the main router for incoming messages from users without an active state.
+    It determines the user's intent and starts the appropriate FSM scenario.
     """
     user_id = message.from_user.id
-    welcome_text = (
-        "Здравствуйте! Я ваш AI-ассистент для цветочного магазина. "
-        "Чем могу помочь?"
-    )
+    user_name = message.from_user.username or message.from_user.first_name
+    user_text = message.text
+
+    # Update user stats
+    async with async_session_maker() as session:
+        await get_or_create_user(session, user_id, user_name)
+
+    # Get intent from NLU
+    intent_data = await get_intent_from_openai(user_text)
+    intent = intent_data.get("intent", "unknown") if intent_data else "unknown"
+    entities = intent_data.get("entities", {}) if intent_data else {}
+
+
+    # --- Intent-based Routing ---
+    if intent in ["order_flowers", "ask_for_recommendation"]:
+        # Check if the occasion was already extracted
+        if "occasion" in entities:
+            await state.update_data(occasion=entities["occasion"])
+            await state.set_state(OrderFlowers.waiting_for_budget)
+            await message.answer(f"Отлично, подбираем букет для случая: \"{entities['occasion']}\". Какой у вас бюджет?")
+        else:
+            await state.set_state(OrderFlowers.waiting_for_occasion)
+            await message.answer("Конечно! Давайте подберем букет. Для какого случая он нужен?")
     
-    log_user_message(user_id, message.text)
-    await message.answer(welcome_text)
-    log_assistant_response(user_id, welcome_text)
+    elif intent == "greeting":
+        await message.answer("Здравствуйте! Чем могу помочь? Вы хотите заказать цветы или нужна рекомендация?")
+    else:
+        # Fallback to a general response for unhandled intents
+        # For now, we'll use the generic OpenAI response
+        prompt = build_prompt([], user_text)
+        response = await get_openai_response(prompt)
+        await message.answer(response or "Я вас не совсем понял. Могу ли я помочь с выбором цветов?")
+
+# --- FSM Handlers for Ordering Flowers ---
+
+@main_router.message(OrderFlowers.waiting_for_occasion, F.text)
+async def process_occasion(message: types.Message, state: FSMContext):
+    """Handles the user's response about the occasion for the flowers."""
+    await state.update_data(occasion=message.text)
+    await state.set_state(OrderFlowers.waiting_for_budget)
+    await message.answer("Отлично! А какой бюджет вы планируете?")
 
 
-@main_router.message()
-async def handle_text_message(message: Message, state: FSMContext):
+@main_router.message(OrderFlowers.waiting_for_budget, F.text)
+async def process_budget(message: types.Message, state: FSMContext):
+    """Handles the user's response about the budget."""
+    await state.update_data(budget=message.text)
+    await state.set_state(OrderFlowers.waiting_for_preferences)
+    await message.answer("Понял. Есть ли какие-то особые предпочтения по цветам или, может быть, по настроению букета?")
+
+
+@main_router.message(OrderFlowers.waiting_for_preferences, F.text)
+async def process_preferences(message: types.Message, state: FSMContext):
     """
-    Handles incoming text messages from the user.
-    Integrates OpenAI to provide an intelligent response.
+    Handles user's preferences, generates a final recommendation using AI,
+    and moves to the confirmation state.
     """
-    user_id = message.from_user.id
+    await state.update_data(preferences=message.text)
+    user_data = await state.get_data()
 
-    if user_id in processing_users:
-        await message.answer("Пожалуйста, подождите, я обрабатываю ваш предыдущий запрос.")
-        return
+    # Build a detailed prompt for the AI assistant
+    recommendation_prompt = (
+        f"Сгенерируй предложение букета для клиента со следующими данными:\n"
+        f"- Повод: {user_data.get('occasion')}\n"
+        f"- Бюджет: {user_data.get('budget')}\n"
+        f"- Предпочтения: {user_data.get('preferences')}\n"
+        f"Предложи один конкретный, красивый вариант, дай ему название и опиши состав. "
+        f"Закончи вопросом, подходит ли клиенту это предложение."
+    )
 
-    processing_users.add(user_id)
-    try:
-        user_text = message.text
-        log_user_message(user_id, user_text)
+    # We use build_prompt to add the system persona
+    final_prompt = build_prompt([], recommendation_prompt)
+    
+    await message.answer("Отлично, я подбираю для вас идеальный вариант... Пожалуйста, подождите немного.")
+
+    recommendation = await get_openai_response(final_prompt)
+
+    await state.update_data(recommendation=recommendation)
+    await state.set_state(OrderFlowers.confirming_order)
+    
+    await message.answer(recommendation or "К сожалению, не смог подобрать вариант. Попробуем еще раз?")
+
+
+@main_router.message(OrderFlowers.confirming_order, F.text)
+async def process_confirmation(message: types.Message, state: FSMContext):
+    """
+    Handles the user's confirmation.
+    Finishes the FSM scenario.
+    """
+    user_response = message.text.lower()
+    
+    if "да" in user_response or "подходит" in user_response or "согласен" in user_response:
+        await message.answer("Отлично! Рад, что вам понравилось. Вскоре мы добавим функцию оформления заказа, а пока вы можете передать этот диалог менеджеру.")
+    else:
+        await message.answer("Жаль, что предложение не подошло. Мы можем попробовать подобрать другой вариант или вы можете пообщаться с нашим флористом напрямую.")
         
-        # Add user message to context immediately
-        add_message(user_id, 'user', user_text)
-
-        if not user_text:
-            return
-
-        # 1. Get user's intent
-        intent_data = await get_intent_from_openai(user_text)
-        # Optional: Log the detected intent
-        # logging.info(f"User {user_id} intent: {intent_data}")
-
-        # 2. Get conversation history
-        history = get_history(user_id)
-
-        # 3. Build the prompt for the language model
-        prompt_messages = build_prompt(history, user_text, intent_data)
-
-        # 4. Get response from OpenAI
-        assistant_response = await get_openai_response(prompt_messages)
-
-        if not assistant_response:
-            assistant_response = "Извините, у меня возникла проблема. Попробуйте еще раз."
-
-        # Send response and save to context
-        await message.answer(assistant_response)
-        log_assistant_response(user_id, assistant_response)
-        add_message(user_id, 'assistant', assistant_response)
-
-    except Exception as e:
-        # Generic error handling
-        error_message = "Произошла непредвиденная ошибка. Мы уже работаем над этим."
-        await message.answer(error_message)
-        log_assistant_response(user_id, error_message)
-        # Optionally log the full error for debugging
-        # logging.error(f"Error handling message for user {user_id}: {e}")
-    finally:
-        # Ensure the user is removed from the processing set
-        processing_users.remove(user_id)
+    # Clear the state to finish the scenario
+    await state.clear()

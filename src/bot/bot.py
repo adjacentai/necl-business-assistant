@@ -6,12 +6,16 @@ from aiogram.enums import ParseMode
 from src.config import TELEGRAM_BOT_TOKEN
 from src.bot.routers import main_router
 from src.bot import handlers
+from src.database.database import create_db_and_tables
 
 # Configure basic logging for the bot
 logging.basicConfig(level=logging.INFO)
 
 async def start_bot():
     """Initializes and starts the Telegram bot."""
+    # Initialize the database
+    await create_db_and_tables()
+
     bot = Bot(token=TELEGRAM_BOT_TOKEN, parse_mode=ParseMode.HTML)
     dp = Dispatcher()
 
