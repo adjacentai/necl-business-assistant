@@ -115,3 +115,11 @@ async def process_confirmation(message: types.Message, state: FSMContext):
         
     # Clear the state to finish the scenario
     await state.clear()
+
+
+@main_router.message(F.content_type.in_({'photo', 'document', 'audio', 'sticker', 'video', 'voice'}))
+async def handle_unsupported_content(message: types.Message):
+    """
+    Handles all non-text content types with a polite message.
+    """
+    await message.answer("К сожалению, я умею работать только с текстом. Пожалуйста, опишите ваш запрос словами.")
