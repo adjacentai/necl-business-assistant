@@ -1,101 +1,101 @@
-# Как работает наш бот: от сообщения до ответа
+# How Our Bot Works: From Message to Response
 
-Этот документ простыми словами объясняет, как наш AI-ассистент понимает пользователя и ведет с ним диалог. Вся магия построена на трех китах: **NLU-модель**, **Конечный автомат (FSM)** и **AI-генерация**.
-
----
-
-### Шаг 1: Пользователь что-то пишет
-
-Все начинается с сообщения от пользователя. Допустим, он пишет:
-
-> "Привет! Посоветуйте букет на день рождения."
+This document explains in simple terms how our AI assistant understands the user and conducts a dialogue. The magic is built on three pillars: the **NLU Model**, the **Finite State Machine (FSM)**, and **AI Generation**.
 
 ---
 
-### Шаг 2: NLU - Понимаем, что от нас хотят
+### Step 1: The User Writes Something
 
-Мы не просто читаем текст, а пытаемся понять его **суть**. Для этого сообщение отправляется в первую AI-модель (GPT) со специальным системным промптом `NLU_SYSTEM_PROMPT`.
+It all starts with a message from the user. Let's say they write:
 
-**Задача этой модели:** Превратить текст в структурированные данные. Она определяет **намерение** (intent) и извлекает **сущности** (entities).
+> "Hi! Can you recommend a bouquet for a birthday?"
+
+---
+
+### Step 2: NLU - Understanding What They Want
+
+We don't just read the text; we try to understand its **essence**. To do this, the message is sent to the first AI model (GPT) with a special system prompt, `NLU_SYSTEM_PROMPT`.
+
+**This model's task:** To turn text into structured data. It identifies the **intent** and extracts **entities**.
 
 ```text
-Сообщение: "Посоветуйте букет на день рождения."
+Message: "Can you recommend a bouquet for a birthday?"
      |
      V
-[NLU-модель (GPT)]
+[NLU Model (GPT)]
      |
      V
-JSON-ответ: {"intent": "ask_for_recommendation", "entities": {"occasion": "день рождения"}}
+JSON Response: {"intent": "ask_for_recommendation", "entities": {"occasion": "birthday"}}
 ```
 
-Теперь мы знаем, что пользователь хочет **рекомендацию** и повод — **"день рождения"**.
+Now we know the user wants a **recommendation** and the occasion is a **"birthday"**.
 
 ---
 
-### Шаг 3: Маршрутизатор (FSM) - Решаем, что делать дальше
+### Step 3: The Router (FSM) - Deciding What to Do Next
 
-Это мозг нашего бота, функция `route_message` в `src/bot/handlers.py`. Она работает как диспетчер на вокзале: смотрит на `intent` и решает, на какой "путь" (сценарий) направить пользователя.
+This is the brain of our bot, the `route_message` function in `src/bot/handlers.py`. It acts like a station dispatcher: it looks at the `intent` and decides which "track" (scenario) to send the user on.
 
-1.  **Проверка намерения:** Диспетчер видит `intent: "ask_for_recommendation"`. Он знает, что для этого намерения нужно запустить сценарий заказа цветов.
+1.  **Intent Check:** The dispatcher sees `intent: "ask_for_recommendation"`. It knows that this intent should trigger the flower ordering scenario.
 
-2.  **Проверка сущностей (умный ход!):** Диспетчер проверяет, а не извлекли ли мы уже какую-то полезную информацию? Да! У нас есть `entities: {"occasion": "день рождения"}`.
+2.  **Entity Check (the smart move!):** The dispatcher checks if we've already extracted any useful information. Yes! We have `entities: {"occasion": "birthday"}`.
 
-3.  **Запуск сценария и пропуск шага:** Вместо того чтобы тупо спрашивать "Для какого случая букет?", бот:
-    *   Сразу сохраняет "день рождения" в свою временную память (FSM).
-    *   **Пропускает первый шаг** и сразу переходит ко второму.
-    *   Задает следующий вопрос: "Отлично, подбираем букет... Какой у вас бюджет?"
+3.  **Start Scenario & Skip Step:** Instead of blindly asking "What's the occasion for the bouquet?", the bot:
+    *   Immediately saves "birthday" to its temporary memory (FSM).
+    *   **Skips the first step** and goes directly to the second.
+    *   Asks the next question: "Great, we're looking for a bouquet... What is your budget?"
 
-Если бы пользователь написал просто "Хочу букет", NLU вернул бы `{"intent": "order_flowers", "entities": {}}`. Диспетчер бы это увидел и задал самый первый вопрос: "Для какого случая он нужен?".
-
----
-
-### Шаг 4: Сценарий (FSM) - Ведем клиента по воронке
-
-Теперь пользователь находится "внутри сценария" `OrderFlowers`. Каждый его следующий ответ будет обрабатываться отдельной, предназначенной для этого шага функцией:
-
--   `process_occasion` (если его спросили про повод)
--   `process_budget` (когда его спросили про бюджет)
--   `process_preferences` (когда спросили про предпочтения)
-
-На каждом шаге бот сохраняет ответы в память FSM.
+If the user had just written "I want a bouquet," the NLU would have returned `{"intent": "order_flowers", "entities": {}}`. The dispatcher would have seen this and asked the very first question: "What's the occasion?"
 
 ---
 
-### Шаг 5: AI-генерация - Создаем персональное предложение
+### Step 4: The Scenario (FSM) - Guiding the Client Through the Funnel
 
-Когда вся информация собрана (повод, бюджет, предпочтения), наступает кульминация.
+The user is now "inside" the `OrderFlowers` scenario. Each of their subsequent answers will be handled by a separate function designed for that step:
 
-1.  **Собираем все данные:** Мы берем всю информацию из памяти FSM.
-2.  **Формируем детальный промпт:** Создаем новый, очень подробный запрос для второй AI-модели (главной, с ролью "продавца-консультанта").
+*   `process_occasion` (if asked about the occasion)
+*   `process_budget` (when asked about the budget)
+*   `process_preferences` (when asked about preferences)
+
+At each step, the bot saves the answers to the FSM memory.
+
+---
+
+### Step 5: AI Generation - Creating a Personalized Offer
+
+When all the information is collected (occasion, budget, preferences), the climax arrives.
+
+1.  **Gather All Data:** We take all the information from the FSM memory.
+2.  **Form a Detailed Prompt:** We create a new, very detailed request for the second AI model (the main one, with the "sales consultant" persona).
     ```
-    "Сгенерируй предложение букета для клиента со следующими данными:
-    - Повод: день рождения
-    - Бюджет: 3000 рублей
-    - Предпочтения: что-нибудь нежное, в розовых тонах
-    Предложи один конкретный, красивый вариант..."
+    "Generate a bouquet suggestion for a client with the following details:
+    - Occasion: birthday
+    - Budget: 3000 rubles
+    - Preferences: something delicate, in pink tones.
+    Propose one specific, beautiful option..."
     ```
-3.  **Получаем креативный ответ:** AI-продавец генерирует уникальное торговое предложение, например:
-    > "Для такого нежного повода я бы порекомендовал наш фирменный букет 'Утренняя роса'. Он состоит из кремовых пионов, розовых ранункулюсов и веточек эвкалипта, что идеально вписывается в ваш бюджет. Как вам такой вариант?"
+3.  **Get a Creative Response:** The AI salesperson generates a unique sales proposition, for example:
+    > "For such a delicate occasion, I would recommend our signature 'Morning Dew' bouquet. It consists of cream peonies, pink ranunculus, and eucalyptus sprigs, which fits perfectly within your budget. How do you like this option?"
 
 ---
 
-### Шаг 6: Завершение
+### Step 6: Completion
 
-Пользователь либо соглашается, либо нет. Бот отвечает на это и **очищает свое состояние** (`state.clear()`), завершая сценарий. Теперь он снова готов принимать новые команды и направлять их через маршрутизатор.
+The user either agrees or disagrees. The bot responds to this and **clears its state** (`state.clear()`), ending the scenario. Now it is ready to receive new commands and direct them through the router again.
 
-### Общая схема
+### Overall Diagram
 
 ```mermaid
 graph TD
-    A[Клиент пишет сообщение] --> B{1. NLU-модель (GPT)};
-    B --> C{2. Маршрутизатор в handlers.py};
-    C -- "Намерение НЕ определено" --> D[Общий ответ от AI];
-    C -- "Намерение 'Заказать цветы' + ЕСТЬ сущности" --> F[Шаг 2: Спросить бюджет];
-    C -- "Намерение 'Заказать цветы' + НЕТ сущностей" --> E[Шаг 1: Спросить повод];
+    A[Client sends a message] --> B{1. NLU Model (GPT)};
+    B --> C{2. Router in handlers.py};
+    C -- "Intent NOT determined" --> D[General response from AI];
+    C -- "Intent 'Order Flowers' + Entities EXIST" --> F[Step 2: Ask for budget];
+    C -- "Intent 'Order Flowers' + NO Entities" --> E[Step 1: Ask for occasion];
     E --> F;
-    F --> G[Шаг 3: Спросить предпочтения];
-    G --> H{4. Собрать все данные и<br/>сформировать детальный промпт};
-    H --> I[5. AI-генерация<br/>персонального предложения];
-    I --> J{6. Подтверждение от клиента};
-    J --> K[Конец сценария / Очистка состояния];
+    F --> G[Step 3: Ask for preferences];
+    G --> H{4. Gather all data &<br/>form a detailed prompt};
+    H --> I[5. AI Generation of<br/>a personalized offer];
+    I --> J{6. Confirmation from client};
+    J --> K[End of scenario / Clear state];
 ``` 
