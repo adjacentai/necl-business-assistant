@@ -1,13 +1,26 @@
 import logging
 from aiogram import F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import StateFilter
+from aiogram.filters import StateFilter, CommandStart
 
 from src.assistant.openai_client import get_openai_response, get_intent_from_openai
 from src.assistant.prompts import build_prompt
 from src.bot.routers import main_router
 from src.bot.states import OrderFlowers
 from src.database.database import async_session_maker, get_or_create_user
+
+
+@main_router.message(CommandStart())
+async def handle_start(message: types.Message, state: FSMContext):
+    """
+    Handles the /start command.
+    Greets the user and clears any previous state.
+    """
+    await state.clear()
+    await message.answer(
+        "Здравствуйте! Я ваш AI-ассистент для цветочного магазина.\n"
+        "Готов помочь подобрать идеальный букет. Просто опишите, что вы ищете."
+    )
 
 
 @main_router.message(StateFilter(None))
